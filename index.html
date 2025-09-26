@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>okLCH Tool with Load/Save</title>
+<style>
+  :root {
+    --gap: 10px;
+    --pad: 12px;
+    --font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --border: 1px solid rgba(0,0,0,.12);
+    --fs: 14px;                /* font-size for row content */
+    --row: 30px;               /* exact pixel row height */
+    --line: rgba(0,0,0,.08);   /* separator color */
+    --ph: rgba(0,0,0,.45);     /* unified placeholder color */
+    --error: #b00020;          /* unified error color */
+    --error-bg: #fff8c4;       /* unified error background (pale yellow) */
+    --cols: 7ch 5ch 160px 5ch 24ch 5ch 8ch 7ch; /* unified widths for 7 columns (added button cols) */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    background: #f7f8fa;
+    color: #1b1f23;
+  }
+  header, main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: var(--pad);
+  }
+  h1 { font-size: 18px; margin: 6px 0 10px; }
+  .controls { font: 12px/1.2 var(--font); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .controls fieldset { border: var(--border); border-radius: 8px; padding: 6px 10px; background:#fff; }
+  .controls label { margin-right: 10px; }
+
+  /* Grid wrapper defines the column tracks */
+  .gridwrap {
+    display: grid;
+    grid-template-columns: var(--cols);
+    gap: var(--gap);
+    align-items: start;
+  }
+
+  /* Legend (header) consumes the parent's tracks via subgrid */
+  .legend {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    gap: var(--gap);
+    margin-bottom: 4px;
+    font: 12px/1.2 var(--font);
+    opacity: .7;
+  }
+  /* match inner padding of .col so text aligns */
+  .legend > div { padding: 0 6px; }
+
+  /* Data grid also consumes the parent's tracks via subgrid */
+  .app {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    gap: var(--gap);
+    align-items: start;
+  }
+
+  .col-button {
+    position: relative;
+    display: grid;
+    grid-auto-rows: var(--row);
+    border: none;
+    padding: 4px 0px;
+    gap: 0;
+  }
+  .col {
+    position: relative;
+    display: grid;
+    grid-auto-rows: var(--row);
+    border: var(--border);
+    border-radius: 8px;
+    background:
+      linear-gradient(to bottom, var(--line), var(--line) 1px, transparent 1px var(--row)) content-box,
+      #fff;
+    background-size: 100% var(--row), auto;
+    background-repeat: repeat-y, no-repeat;
+    background-origin: content-box, border-box;
+    padding: 4px 6px;
+    gap: 0;
+  }
+
+  /* Row elements */
+  .chip { width: 100%; height: var(--row); }
+  .rowtext, .rowinput {
+    font-family: var(--font);
+    font-size: var(--fs);
+    line-height: var(--row);
+    height: var(--row);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rowinput {
+    border: none;
+    outline: none;
+    width: 100%;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+  }
+  .rowinput::placeholder { color: var(--ph); opacity: 1; }
+  .rowinput::-webkit-input-placeholder { color: var(--ph); opacity: 1; }
+  .phstyle { color: var(--ph); }
+
+  .note { font-size: 12px; opacity: .8; margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;}
+
+  button {
+    font: 12px var(--font);
+    padding: 6px 10px;
+    border: var(--border);
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f2f3f5; }
+  .oklch-info {
+    margin-top:6px;
+    font:12px/1.3 var(--font);
+    color:var(--error);
+    min-height:1.3em; /* reserve one line even when empty */
+  }
+  .oklch-info.err {
+    background:var(--error-bg);
+    font-weight:700;
+  }
+  #oklch .rowinput.err{color:var(--error);font-weight:700;background:var(--error-bg);}
+
+  /* Convert buttons (→LCH / ←HEX) */
+  .convert-button {
+    font-family: var(--font);
+    font-size: var(--fs);
+    width: 5ch;                /* fixed as requested */
+    height: var(--row);
+    padding: 0;
+    margin: 0 auto;            /* center within column */
+    border: var(--border);
+    border-radius: 6px;
+    background: #fff;
+    display: block;
+    line-height: calc(var(--row) - 2px); /* vertically center text */
+    text-align: center;
+    cursor: default;           /* not wired yet */
+    user-select: none;
+  }
+  .convert-button:focus-visible {
+    outline: 1px solid color-mix(in oklab, #000, white 50%);
+    outline-offset: 1px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>okLCH Tool with Load/Save - Convert RGB to okLCH and back</h1>
+  <div class="controls">
+    <fieldset>
+      <legend>ΔE calculations</legend>
+      <label><input type="radio" name="deSrc" value="col3" checked> #1 vs #3</label>
+      <label><input type="radio" name="deSrc" value="col4"> #1 vs #4</label>
+    </fieldset>
+    <button id="clear">Clear All</button>
+    <button id="load">Load JSON</button>
+    <button id="copy">Copy to Clipboard</button>
+    <button id="save">Save JSON</button>
+  </div>
+  <div class="oklch-info" id="oklch-info" aria-live="polite"></div>
+</header>
+
+<main>
+  <div class="gridwrap">
+    <div class="legend">
+      <div>#1 RGB Input</div>
+      <div>→LCH</div>
+      <div>#2 RGB / LCH</div>
+      <div>←HEX</div>
+      <div>#3 okLCH</div>
+      <div>←LCH</div>
+      <div>#4 LCH to RGB</div>
+      <div>#5 ΔE</div>
+    </div>
+
+    <div class="app">
+      <div id="rgbcol" class="col"></div>
+      <div id="rgbtolch" class="col-button"></div>   <!-- new button column: →LCH -->
+      <div id="strips" class="col"></div>
+      <div id="lchtorgb" class="col-button"></div>   <!-- new button column: ←HEX -->
+      <div id="oklch" class="col"></div>
+      <div id="lrgbtolch" class="col-button"></div>
+      <div id="lrgb" class="col"></div>
+      <div id="deltae" class="col"></div>
+    </div>
+  </div>
+
+  <div class="note">
+    This is supposed to be some text with fancy <code>code</code> snippet and <code>more: code</code> and even more <code>.leetcode</code>.
+  </div>
+</main>
+
+<script>
+(function(root){
+  // ---- constants that affect look ----
+  const ROWS = 32;
+  const defaultHexes=['12abef','ff0000','00ff00','0000ff','777777','abcdef','c0ffee','654321','f0f0f0','000000'];
+  // ---- const that affect loading/saving files
+  const KEYS = Object.freeze({ RGB: 'rgb', LCH_HEX: 'oklch_hex', OKLCH: 'oklch' });
+
+  root.ROWS = ROWS;
+  root.defaultHexes = defaultHexes;
+  root.KEYS = KEYS;
+})(globalThis);
+</script>
+
+<script>
+(function(root){
+  const SoT_LCH = Array.from({length: ROWS}, () => null);
+  function fmtLCH([L,C,h]){ return `${L.toFixed(5)} ${C.toFixed(5)} ${h.toFixed(3)}`; }
+  const rgbCol=document.getElementById('rgbcol'),
+        strips=document.getElementById('strips'),
+        oklchCol=document.getElementById('oklch'),
+        lrgb=document.getElementById('lrgb'),
+        deltaECol=document.getElementById('deltae');
+  const clamp01=x=>Math.min(1,Math.max(0,x));
+  const srgbToLin=u=>(u<=0.04045?u/12.92:Math.pow((u+0.055)/1.055,2.4));
+  const linToSrgb=u=>(u<=0.0031308?12.92*u:1.055*Math.pow(u,1/2.4)-0.055);
+  const cbrt=Math.cbrt||(x=>x<0?-Math.pow(-x,1/3):Math.pow(x,1/3));
+  function hexToRgb(h){ if(!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+    return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255]; }
+  function rgbToHex(r,g,b){ const t=v=>{const n=Math.round(clamp01(v)*255); return n.toString(16).padStart(2,'0')}; return '#'+t(r)+t(g)+t(b); }
+  function srgbToOklab([rs,gs,bs]){ const r=srgbToLin(rs), g=srgbToLin(gs), b=srgbToLin(bs);
+    const l=0.4122214708*r+0.5363325363*g+0.0514459929*b;
+    const m=0.2119034982*r+0.6806995451*g+0.1073969566*b;
+    const s=0.0883024619*r+0.2817188376*g+0.6299787005*b;
+    const l_=cbrt(l), m_=cbrt(m), s_=cbrt(s);
+    return [0.2104542553*l_+0.7936177850*m_-0.0040720468*s_, 1.9779984951*l_-2.4285922050*m_+0.4505937099*s_, 0.0259040371*l_+0.7827717662*m_-0.8086757660*s_]; }
+  function srgbToOklch(rgb){ const [L,a,b]=srgbToOklab(rgb); const C=Math.hypot(a,b); let h=Math.atan2(b,a)*180/Math.PI; if(h<0) h+=360; return [L,C,h]; }
+  function oklchToSrgb([L,C,h]){ const hr=h*Math.PI/180, a=C*Math.cos(hr), b=C*Math.sin(hr);
+    const l_=L+0.3963377774*a+0.2158037573*b, m_=L-0.1055613458*a-0.0638541728*b, s_=L-0.0894841775*a-1.2914855480*b;
+    const l=l_**3, m=m_**3, s=s_**3;
+    let r=+4.0767416621*l-3.3077115913*m+0.2309699292*s, g=-1.2684380046*l+2.6097574011*m-0.3413193965*s, b2=-0.0041960863*l-0.7034186147*m+1.7076147010*s;
+    return [linToSrgb(r), linToSrgb(g), linToSrgb(b2)].map(clamp01); }
+  // Linear sRGB (pre-gamma, no clamp) — for robust gamut checks
+  function oklchToLinearSrgbRaw([L,C,h]){
+    const hr=h*Math.PI/180, a=C*Math.cos(hr), b=C*Math.sin(hr);
+    const l_=L+0.3963377774*a+0.2158037573*b, m_=L-0.1055613458*a-0.0638541728*b, s_=L-0.0894841775*a-1.2914855480*b;
+    const l=l_**3, m=m_**3, s=s_**3;
+    const r=+4.0767416621*l-3.3077115913*m+0.2309699292*s;
+    const g=-1.2684380046*l+2.6097574011*m-0.3413193965*s;
+    const b2=-0.0041960863*l-0.7034186147*m+1.7076147010*s;
+    return [r,g,b2];
+  }
+  function oklchToOklab([L,C,h]){ const hr=h*Math.PI/180; return [L, C*Math.cos(hr), C*Math.sin(hr)]; }
+  function deltaE([L1,a1,b1],[L2,a2,b2]){ return Math.hypot(L1-L2, a1-a2, b1-b2); }
+  function parseOKLCHString(s){ if(!s) return null; s=String(s).trim().toLowerCase();
+    if(s.startsWith('oklch')){ const m=s.match(/oklch\s*\(\s*([^)]+)\)/); if(!m) return null; s=m[1]; }
+    s=s.replace(/\/.*$/,'').trim(); const p=s.split(/[\s,]+/); if(p.length<3) return null; const L=+p[0], C=+p[1], h=+p[2];
+    return [L,C,h].every(Number.isFinite) ? [L,C,h] : null; }
+  // --- Helpers for row operations ---
+  function rowIndexOf(parent, child){
+    return Array.prototype.indexOf.call(parent.children, child);
+  }
+  function isValidHex6(s){ return /^[0-9a-fA-F]{6}$/.test((s||'').trim()); }
+
+  function handleToLCH(i){
+    const rgbNode = (rgbCol.children[i].value||'').trim();
+    if(!isValidHex6(rgbNode)) return;
+    const lch = srgbToOklch(hexToRgb(rgbNode));
+    SoT_LCH[i] = lch;
+    const inp = oklchCol.children[i];
+    if(inp && inp.tagName === 'INPUT'){ inp.value = fmtLCH(lch); }
+    renderRow(i);
+  }
+
+  function handleToHEX(i){
+    const s = (lrgb.children[i].textContent||'').trim();
+    if(!isValidHex6(s)) return;
+    const inp = rgbCol.children[i];
+    if(inp && inp.tagName === 'INPUT'){ inp.value = s.toLowerCase(); }
+    renderRow(i);
+  }
+
+  function handleLchHex2Oklch(i){
+    const s = (lrgb.children[i].textContent||'').trim();
+    if(!isValidHex6(s)) return;
+    const lch = srgbToOklch(hexToRgb(s));
+    SoT_LCH[i] = lch;
+    const inp = oklchCol.children[i];
+    if(inp && inp.tagName === 'INPUT'){ inp.value = fmtLCH(lch); }
+    renderRow(i);
+  }
+
+  const HEX_INIT = Array.from({length: ROWS}, (_,i)=> i < defaultHexes.length ? defaultHexes[i] : '');
+  for(let i=0;i<ROWS;i++){ if(HEX_INIT[i]) SoT_LCH[i] = srgbToOklch(hexToRgb(HEX_INIT[i])); }
+  // --- Input filters ---
+  const isHexChar = ch => /[0-9a-fA-F]/.test(ch);
+  const filterHex = s => (s||'').replace(/[^0-9a-fA-F]/g,'').slice(0,6).toLowerCase();
+  const filterLCHChars = s => (s||'').replace(/[^0-9. ]/g,''); // allow only digits, dot, space
+  // trailing-dot helpers (DRY)
+  const hasTrailingDotTokens = s => !!(s && /\b\d+\.(?=\s|$)/.test(s));
+  const stripTrailingDots = s => (s||'').replace(/(\d+)\.(?=\s|$)/g, '$1');
+
+  // gamut & clamp helpers
+  const normalizeHue = h => ((h%360)+360)%360;
+  const EPS = 1e-6;
+  const hexInputs=[];
+  for(let i=0;i<ROWS;i++){ const inp=document.createElement('input'); inp.className='rowinput'; inp.maxLength=6; inp.autocapitalize='none'; inp.autocomplete='off'; inp.spellcheck=false; inp.value = HEX_INIT[i] || ''; rgbCol.appendChild(inp); hexInputs.push(inp); }
+  // Column 1: accept only hex chars, force lowercase on type/paste
+  hexInputs.forEach((inp,i)=>{
+    inp.addEventListener('beforeinput', (e)=>{
+      const t = e.inputType;
+      if (t === 'insertText') {
+        if (!isHexChar(e.data)) { e.preventDefault(); return; }
+        e.data = e.data.toLowerCase();
+      } else if (t === 'insertFromPaste') {
+        const txt = (e.clipboardData || window.clipboardData).getData('text');
+        document.execCommand('insertText', false, filterHex(txt));
+        e.preventDefault();
+      }
+    });
+    inp.addEventListener('input', ()=>{
+      const v = filterHex(inp.value);
+      if (inp.value !== v) inp.value = v;
+      renderRow(i);
+    });
+  });
+
+  while(strips.children.length    < ROWS) strips.appendChild(document.createElement('div'));
+  while(oklchCol.children.length  < ROWS) oklchCol.appendChild(document.createElement('input'));
+  while(lrgb.children.length   < ROWS) lrgb.appendChild(document.createElement('div'));
+  while(deltaECol.children.length < ROWS) deltaECol.appendChild(document.createElement('div'));
+  
+  // Initialize OKLCH inputs once from seeded SoT_LCH (no auto-sync from HEX afterward)
+  for(let i=0;i<ROWS;i++){
+    const inp = oklchCol.children[i];
+    if (inp && inp.tagName === 'INPUT') {
+      inp.className = 'rowinput';
+      inp.value = SoT_LCH[i] ? fmtLCH(SoT_LCH[i]) : '';
+    }
+  }
+
+  // Column 3: accept only digits, dot, and space
+  oklchCol.addEventListener('beforeinput', (e)=>{
+    if(!(e.target instanceof HTMLInputElement)) return;
+    const t = e.inputType;
+    if (t === 'insertText') {
+      if (!/^[0-9. ]$/.test(e.data)) e.preventDefault();
+    } else if (t === 'insertFromPaste') {
+      const txt = (e.clipboardData || window.clipboardData).getData('text');
+      document.execCommand('insertText', false, filterLCHChars(txt));
+      e.preventDefault();
+    }
+  });
+
+  function renderRow(i){
+  const rgbNode=(hexInputs[i].value||'').trim();
+  const colorNode   = strips.children[i]; colorNode.className='chip';
+  const lchNode     = oklchCol.children[i]; lchNode.className='rowinput';
+  const lrgbNode = lrgb.children[i];    lrgbNode.className='rowtext';
+  const deNode      = deltaECol.children[i];deNode.className='rowtext';
+
+  // Update SoT (OKLCH) from Column 1 hex if valid; otherwise leave/null as seeded
+  /* HEX edits do not mutate SoT */
+
+  // Left patch = Column 1 hex (or default seed), right patch = SoT from Col 3
+  const leftHex = (/^[0-9a-fA-F]{6}$/.test(rgbNode)) ? ('#'+rgbNode) : (HEX_INIT[i] ? ('#'+HEX_INIT[i]) : 'transparent');
+
+  if(SoT_LCH[i]){
+    
+      const s4 = oklchToSrgb(SoT_LCH[i]);
+      const rightHex = rgbToHex(...s4);
+      lrgbNode.textContent = rightHex.replace(/^#/,''); 
+      // Apply 50/50 split (no gap)
+      colorNode.style.background = `linear-gradient(to right, ${leftHex} 0 50%, ${rightHex} 50% 100%)`;
+    // compute ΔE inline instead of round-tripping
+    const mode = (document.querySelector('input[name="deSrc"]:checked')||{}).value || 'col3';
+    const rgb1 = /^[0-9a-fA-F]{6}$/.test(rgbNode) ? hexToRgb(rgbNode) : null;
+    if(rgb1){
+      let lab2;
+      if (mode === 'col3') lab2 = oklchToOklab(SoT_LCH[i]);
+      else {
+        const qRgb = hexToRgb(lrgbNode.textContent);
+        lab2 = qRgb ? srgbToOklab(qRgb) : null;
+      }
+      const dE = lab2 ? deltaE(srgbToOklab(rgb1), lab2) : NaN;
+      deNode.textContent = Number.isFinite(dE) ? dE.toFixed(4) : '';
+    } else {
+      deNode.textContent = '';
+    }
+  }
+  else { 
+    lchNode.value=''; 
+     
+    lrgbNode.textContent=''; 
+    deNode.textContent=''; 
+    const rightHex = 'transparent';
+    colorNode.style.background = `linear-gradient(to right, ${leftHex} 0 50%, ${rightHex} 50% 100%)`;
+  }
+}
+  function render(){ for(let i=0;i<ROWS;i++) renderRow(i); }
+  oklchCol.addEventListener('input', (e)=>{
+    if(!(e.target instanceof HTMLInputElement)) return;
+    const i = Array.prototype.indexOf.call(oklchCol.children, e.target);
+    if(i < 0) return;
+    const rgbNode=(hexInputs[i].value||'').trim();
+    const rgb = (/^[0-9a-fA-F]{6}$/.test(rgbNode)) ? hexToRgb(rgbNode) : null;
+    const lrgbNode = lrgb.children[i];
+    const deNode  = deltaECol.children[i];
+    const errBox = document.getElementById('oklch-info');
+    // special-case: numbers ending with a '.' are considered a parse error while typing
+    if(hasTrailingDotTokens(e.target.value)){
+      lrgbNode.textContent=''; deNode.textContent=''; SoT_LCH[i]=null;
+      e.target.classList.add('err');
+      if(errBox){ errBox.textContent='number must not end with a .'; errBox.classList.add('err'); }
+      return;
+    }
+    const parsed = parseOKLCHString(e.target.value);
+    if(!parsed){
+      lrgbNode.textContent=''; deNode.textContent=''; SoT_LCH[i]=null; e.target.classList.add('err'); if(errBox){ errBox.textContent='Parse error'; errBox.classList.add('err'); }
+      
+      return;
+    }
+    SoT_LCH[i] = parsed; // keep user's rgbNode typing
+    const [Lt,Ct,ht] = parsed;
+    const outL = (Lt<0 || Lt>1);
+    const outC = (Ct<0);
+    const outH = (!Number.isFinite(ht) || ht < 0 || ht >= 360);
+    const [Lc,Cc,hc] = parsed;
+    const rtRgb = oklchToSrgb([Lc,Cc,hc]); lrgbNode.textContent = rgbToHex(...rtRgb).replace(/^#/,''); 
+    const leftHex = (/^[0-9a-fA-F]{6}$/.test(rgbNode)) ? ('#'+rgbNode) : (HEX_INIT[i] ? ('#'+HEX_INIT[i]) : 'transparent');
+    const rightHex = rgbToHex(...rtRgb);
+    strips.children[i].style.background = `linear-gradient(to right, ${leftHex} 0 50%, ${rightHex} 50% 100%)`;
+    const rgbLin = oklchToLinearSrgbRaw([Math.min(1,Math.max(0,Lt)), Math.max(0,Ct), normalizeHue(ht)]);
+    const outOfGamut = rgbLin.some(v => v < -EPS || v > 1 + EPS);
+    const hasErr = outL || outC || outH || outOfGamut;
+    e.target.classList.toggle('err', hasErr);
+    if(errBox){
+      if(hasErr){
+        const msgs=[];
+        if(outL) msgs.push('L must be 0–1');
+        if(outC) msgs.push('C must be ≥ 0');
+        if(outH) msgs.push('H must be in [0, 360)');
+        if(outOfGamut){ const [rr,gg,bb]=rgbLin; const [er,eg,eb]=rgbLin.map(v=>linToSrgb(v)); msgs.push(`out of sRGB (lin: r=${rr.toFixed(6)} g=${gg.toFixed(6)} b=${bb.toFixed(6)}; enc: r=${(er*255).toFixed(3)} g=${(eg*255).toFixed(3)} b=${(eb*255).toFixed(3)})`); }
+        errBox.textContent = 'LCH: ' + msgs.join(' • ');
+        errBox.classList.add('err');
+      } else {
+        errBox.textContent = '';
+        errBox.classList.remove('err');
+      }
+    }
+    if(!rgb){ deNode.textContent=''; return; }
+    const mode = (document.querySelector('input[name="deSrc"]:checked')||{}).value || 'col3';
+    let lab2; if (mode === 'col3') { lab2 = oklchToOklab([Lc,Cc,hc]); } else { const qRgb = hexToRgb(lrgbNode.textContent); lab2 = srgbToOklab(qRgb); }
+    const dE = deltaE(srgbToOklab(rgb), lab2); deNode.textContent = dE.toFixed(4);
+  });
+
+  
+  // On blur: strip any trailing '.' from numeric tokens and re-parse (DRY)
+  oklchCol.addEventListener('focusout', (e)=>{
+    if(!(e.target instanceof HTMLInputElement)) return;
+    const val = e.target.value || '';
+    if(hasTrailingDotTokens(val)){
+      const cleaned = stripTrailingDots(val);
+      if(cleaned !== val){
+        e.target.value = cleaned;
+        // trigger existing input pipeline
+        e.target.dispatchEvent(new Event('input', {bubbles:true}));
+      }
+    }
+  });
+
+  // Show guidance in header when focusing a row
+  oklchCol.addEventListener('focusin', (e)=>{
+    if(!(e.target instanceof HTMLInputElement)) return;
+    const i = Array.prototype.indexOf.call(oklchCol.children, e.target);
+    if(i < 0) return;
+    const errBox = document.getElementById('oklch-info');
+    if(!errBox) return;
+    const val = e.target.value.trim();
+    if(!val){
+      // 2b. Row is empty
+      errBox.textContent = 'Ranges — L: [0, 1], H: [0, 360)';
+      errBox.classList.remove('err');
+      return;
+    }
+    const parsed = parseOKLCHString(val);
+    if(!parsed){
+      errBox.textContent = 'Parse error';
+      errBox.classList.add('err');
+      return;
+    }
+    const [Lt,Ct,ht] = parsed;
+    const outL = (Lt<0 || Lt>1);
+    const outC = (Ct<0);
+    const outH = (!Number.isFinite(ht) || ht < 0 || ht >= 360);
+    const rgbLin = oklchToLinearSrgbRaw([Math.min(1,Math.max(0,Lt)), Math.max(0,Ct), normalizeHue(ht)]);
+    const outOfGamut = rgbLin.some(v => v < -EPS || v > 1 + EPS);
+    if(outL || outC || outH || outOfGamut){
+      const msgs=[]; if(outL) msgs.push('L must be 0–1'); if(outC) msgs.push('C must be ≥ 0'); if(outH) msgs.push('H must be in [0, 360)'); if(outOfGamut){ const [rr,gg,bb]=rgbLin; const [er,eg,eb]=rgbLin.map(v=>linToSrgb(v)); msgs.push(`out of sRGB (lin: r=${rr.toFixed(6)} g=${gg.toFixed(6)} b=${bb.toFixed(6)}; enc: r=${(er*255).toFixed(3)} g=${(eg*255).toFixed(3)} b=${(eb*255).toFixed(3)})`); }
+      errBox.textContent = 'LCH: ' + msgs.join(' • ');
+      errBox.classList.add('err');  // 2c bold + bg
+    } else {
+      errBox.textContent = 'LCH values are ok'; // 2a
+      errBox.classList.remove('err');
+    }
+  });
+  hexInputs.forEach((inp,i)=> inp.addEventListener('input', ()=> renderRow(i)));
+  function recomputeAllDeltaE(){
+    const mode = (document.querySelector('input[name=\"deSrc\"]:checked')||{}).value || 'col3';
+    for(let i=0;i<ROWS;i++){
+      const rgbNode = (rgbCol.children[i].value||'').trim(); const deNode = deltaECol.children[i];
+      if(!(rgbNode && /^[0-9a-fA-F]{6}$/.test(rgbNode)) || !SoT_LCH[i]){ if(deNode) deNode.textContent=''; continue; }
+      const rgb = hexToRgb(rgbNode);
+      let lab2; if (mode === 'col3') { lab2 = oklchToOklab(SoT_LCH[i]); }
+      else { const hexStr = lrgb.children[i] ? lrgb.children[i].textContent : ''; const qRgb = hexToRgb(hexStr); lab2 = qRgb ? srgbToOklab(qRgb) : null; }
+      const dE = lab2 ? deltaE(srgbToOklab(rgb), lab2) : NaN; if(deNode) deNode.textContent = Number.isFinite(dE) ? dE.toFixed(4) : '';
+    }
+  }
+  document.querySelectorAll('input[name=\"deSrc\"]').forEach(r => r.addEventListener('change', recomputeAllDeltaE));
+  render();
+  // Step 6: at startup, perform step 2 for all rows
+  for(let i=0;i<ROWS;i++){ handleToLCH(i); }
+
+  // --- Button delegations ---
+  document.getElementById('rgbtolch').addEventListener('click', (e)=>{
+    if(!(e.target instanceof HTMLButtonElement)) return;
+    const i = rowIndexOf(e.currentTarget, e.target);
+    if(i>=0) handleToLCH(i);
+  });
+  document.getElementById('lchtorgb').addEventListener('click', (e)=>{
+    if(!(e.target instanceof HTMLButtonElement)) return;
+    const i = rowIndexOf(e.currentTarget, e.target);
+    if(i>=0) handleToHEX(i);
+  });
+  document.getElementById('lrgbtolch').addEventListener('click', (e)=>{
+    if(!(e.target instanceof HTMLButtonElement)) return;
+    const i = rowIndexOf(e.currentTarget, e.target);
+    if(i>=0) handleLchHex2Oklch(i);
+  });
+
+  // --- Clear button: confirm then wipe all rows and state (minimal) ---
+  (function(){
+    const clearBtn = document.getElementById('clear');
+    if(!clearBtn) return;
+    clearBtn.addEventListener('click', ()=>{
+      if(!confirm('Clear all rows to blank?')) return;
+      // clear SoT and all columns
+      for(let i=0;i<ROWS;i++){
+        SoT_LCH[i] = null;
+        HEX_INIT[i] = '';  // also clear seed so renderRow doesn't repopulate left stripe
+        // col #1 inputs
+        const inp = rgbCol.children[i];
+        if(inp && inp.tagName === 'INPUT') inp.value = '';
+        // col #3 OKLCH inputs
+        const ok = oklchCol.children[i];
+        if(ok && ok.tagName === 'INPUT'){ ok.value = ''; ok.classList.remove('err'); }
+        // col #4 computed hex text
+        const r4 = lrgb.children[i];
+        if(r4) r4.textContent = '';
+        // col #2 chips: reset to left-only (seed or transparent)
+        if(strips.children[i]){
+          strips.children[i].style.background = `linear-gradient(to right, transparent 0 50%, transparent 50% 100%)`;
+        }
+        // ΔE
+        const de = deltaECol.children[i];
+        if(de) de.textContent = '';
+      }
+      // info box
+      const inf = document.getElementById('oklch-info');
+      if(inf){ inf.textContent = 'Cleared all rows.'; inf.classList.remove('err'); }
+      render(); // refresh visuals
+    });
+  })();
+
+  // --- Load button: import JSON file and populate rows (DRY) ---
+  (function(){
+    const loadBtn = document.getElementById('load');
+    if(!loadBtn) return;
+
+    // helpers (mirror copy/save formats)
+    function isHex6(s){ return /^[0-9a-fA-F]{6}$/.test((s||'').trim()); }
+    function toHex6NoHash(s){
+      if(typeof s !== 'string') return null;
+      const m = s.trim().toLowerCase().match(/^#?([0-9a-f]{6})$/);
+      return m ? m[1] : null;
+    }
+    function f64FromHexBE(s){
+      // accept "0x" prefixed 16-byte hex or plain 16-byte hex
+      if(typeof s !== 'string') return NaN;
+      s = s.trim().toLowerCase().replace(/^0x/, '');
+      if(!/^[0-9a-f]{16}$/.test(s)) return NaN;
+      const buf = new ArrayBuffer(8);
+      const dv = new DataView(buf);
+      for(let i=0;i<8;i++){
+        dv.setUint8(i, parseInt(s.slice(i*2, i*2+2), 16));
+      }
+      return dv.getFloat64(0, false); // big-endian
+    }
+    function parseSoTLCH(v){
+      // accept [f64hex, f64hex, f64hex] or [number, number, number]
+      if(!Array.isArray(v) || v.length!==3) return null;
+      let L = v[0], C = v[1], h = v[2];
+      if(typeof L === 'string') { L = f64FromHexBE(L); }
+      if(typeof C === 'string') { C = f64FromHexBE(C); }
+      if(typeof h === 'string') { h = f64FromHexBE(h); }
+      if([L,C,h].every(Number.isFinite)) return [L,C,h];
+      return null;
+    }
+
+    function setRowFromSoTLCH(row, lch){
+      SoT_LCH[row] = lch;
+      // update OKLCH text
+      const inp = oklchCol.children[row];
+      if(inp && inp.tagName === 'INPUT'){ inp.value = fmtLCH(lch); }
+      // update right hex (#4) and color strip
+      const hexRight = rgbToHex(...oklchToSrgb(lch));
+      const lrgbNode = lrgb.children[row];
+      if(lrgbNode) lrgbNode.textContent = hexRight.replace(/^#/,''); 
+      const leftVal = (rgbCol.children[row] && rgbCol.children[row].value || '').trim();
+      const leftHex = isHex6(leftVal) ? ('#'+leftVal) : (HEX_INIT[row] ? ('#'+HEX_INIT[row]) : 'transparent');
+      if(strips.children[row]){
+        strips.children[row].style.background = `linear-gradient(to right, ${leftHex} 0 50%, ${hexRight} 50% 100%)`;
+      }
+      renderRow(row);
+    }
+
+    function setRowRgb(row, hex6){
+      const inp = rgbCol.children[row];
+      if(inp && inp.tagName === 'INPUT'){
+        inp.value = hex6;
+      }
+      renderRow(row);
+    }
+
+    loadBtn.addEventListener('click', ()=>{
+      const fi = document.createElement('input');
+      fi.type = 'file';
+      fi.accept = '.json,application/json,text/json';
+      fi.addEventListener('change', ()=>{
+        const file = fi.files && fi.files[0];
+        if(!file){ return; }
+        const reader = new FileReader();
+        reader.onload = ()=>{
+          const inf = document.getElementById('oklch-info');
+          let data;
+          try{
+            data = JSON.parse(String(reader.result || ''));
+          }catch{
+            if(inf){ inf.textContent = 'Load failed: invalid JSON'; inf.classList.add('err'); }
+            return;
+          }
+          if(!Array.isArray(data)){
+            if(inf){ inf.textContent = 'Load failed: JSON must be an array'; inf.classList.add('err'); }
+            return;
+          }
+          // populate rows
+          let row = 0;
+          let filled = 0;
+          for(const item of data){
+            if(row >= ROWS) break;
+            if(!item || typeof item !== 'object') continue;
+            let someValidData = false;
+
+            // rgb
+            if(Object.prototype.hasOwnProperty.call(item, KEYS.RGB)){
+              const h6 = toHex6NoHash(item.rgb);
+              if(h6){
+                setRowRgb(row, h6);
+                someValidData = true;
+              }
+            }
+
+            // SoT_LCH (preferred over oklch when present & valid)
+            let hadSoT = false;
+            if(Object.prototype.hasOwnProperty.call(item, KEYS.LCH_HEX)){
+              const lch = parseSoTLCH(item[KEYS.LCH_HEX]);
+              if(lch){
+                setRowFromSoTLCH(row, lch);
+                someValidData = true;
+                hadSoT = true;
+              }
+            }
+
+            // oklch string (used only if SoT_LCH not valid)
+            if(!hadSoT && Object.prototype.hasOwnProperty.call(item, KEYS.OKLCH)){
+              const parsed = parseOKLCHString(item[KEYS.OKLCH]);
+              if(parsed){
+                setRowFromSoTLCH(row, parsed);
+                someValidData = true;
+              }
+            }
+
+            if(someValidData){
+              row++;
+              filled++;
+            }
+          }
+          if(inf){
+            if(filled>0){
+              inf.textContent = 'Loaded '+filled+' row(s) from JSON.';
+              inf.classList.remove('err');
+            }else{
+              inf.textContent = 'No valid rows found in JSON.';
+              inf.classList.add('err');
+            }
+          }
+        };
+        reader.readAsText(file);
+      }, {once:true});
+      fi.click();
+    });
+  })();
+
+  // --- Copy/Save buttons: dump rows to JSON (DRY) with IEEE-754 lossless bytes for SoT_LCH ---
+  (function(){
+    const copyBtn = document.getElementById('copy');
+    const saveBtn = document.getElementById('save');
+    if(!copyBtn && !saveBtn) return;
+
+    function f64ToHexBE(n){
+      const buf = new ArrayBuffer(8);
+      const dv = new DataView(buf);
+      dv.setFloat64(0, n, false); // big-endian
+      let s = "0x";
+      for(let i=0;i<8;i++){
+        const b = dv.getUint8(i).toString(16).padStart(2,'0');
+        s += b;
+      }
+      return s;
+    }
+
+    function isHex6(s){ return /^[0-9a-fA-F]{6}$/.test((s||'').trim()); }
+
+    // --- shared JSON builder ---
+    function buildJson(){
+      const out = [];
+      for(let i=0;i<ROWS;i++){
+        const rowObj = {};
+        // rgb from rgbcol.children[i] (input value), include as "#rrggbb" if valid
+        const rgbIn = rgbCol.children[i];
+        if(rgbIn && rgbIn.tagName === 'INPUT'){
+          const v = (rgbIn.value||'').trim().toLowerCase();
+          if(isHex6(v)){
+            rowObj[KEYS.RGB] = "#" + v;
+          }
+        }
+
+        // SoT_LCH as three IEEE-754 64-bit hex strings (big-endian)
+        const lch = SoT_LCH[i];
+        if(Array.isArray(lch) && lch.length===3 && lch.every(Number.isFinite)){
+          rowObj[KEYS.LCH_HEX] = [ f64ToHexBE(lch[0]), f64ToHexBE(lch[1]), f64ToHexBE(lch[2]) ];
+        }
+
+        // oklch from oklchCol input if it parses as valid "L C H"
+        const okIn = oklchCol.children[i];
+        if(okIn && okIn.tagName === 'INPUT'){
+          const raw = (okIn.value||'').trim();
+          const parsed = parseOKLCHString(raw);
+          if(parsed){
+            rowObj[KEYS.OKLCH] = raw;
+          }
+        }
+
+        // Include row only if at least one key is present
+        if(Object.keys(rowObj).length > 0){
+          out.push(rowObj);
+        }
+      }
+
+      let json = JSON.stringify(out, null, 2);
+      
+      // compact SoT_LCH arrays
+      json = json.replace(
+        /(\[\s*\n\s*"0x[0-9a-f]+".*?\n\s*\])/gis,
+        m => m.replace(/\s*\n\s*/g, "")
+      );
+      
+      // move opening brace up
+      json = json.replace(/\{\n\s*/g, "{ ");
+      return {json, count: out.length};
+    }
+
+    // --- copy handler ---
+    copyBtn?.addEventListener('click', async () => {
+      const {json, count} = buildJson();
+      try{
+        if(navigator.clipboard && window.isSecureContext){
+          await navigator.clipboard.writeText(json);
+        }else{
+          const ta = document.createElement('textarea');
+          ta.value = json;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        const inf = document.getElementById('oklch-info');
+        if(inf){ inf.textContent = 'Copied JSON ('+count+' rows) to clipboard.'; inf.classList.remove('err'); }
+      }catch{
+        const inf = document.getElementById('oklch-info');
+        if(inf){ inf.textContent = 'Copy failed'; inf.classList.add('err'); }
+      }
+    });
+
+    // --- save handler ---
+    saveBtn?.addEventListener('click', () => {
+      const {json, count} = buildJson();
+      const blob = new Blob([json], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "oklch.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      const inf = document.getElementById('oklch-info');
+      if(inf){ inf.textContent = 'Saved JSON ('+count+' rows) to file.'; inf.classList.remove('err'); }
+    });
+  })();
+})(globalThis);
+
+</script>
+
+<script>
+// Dynamically add →LCH / ←HEX buttons per row based on ROWS
+(function(root){
+  const toL = document.getElementById('rgbtolch');
+  const toH = document.getElementById('lchtorgb');
+  const toLCH = document.getElementById('lrgbtolch');
+  if(!toL || !toH || !toLCH || typeof ROWS === 'undefined') return;
+  for(let i=0;i<ROWS;i++){
+    const bL = document.createElement('button');
+    bL.className = 'convert-button';
+    bL.type = 'button';
+    bL.textContent = '\u2192LCH'; // →LCH
+    toL.appendChild(bL);
+
+    const bMid = document.createElement('button');
+    bMid.className = 'convert-button';
+    bMid.type = 'button';
+    bMid.textContent = '\u2190LCH'; // ←LCH
+    toLCH.appendChild(bMid);
+
+    const bH = document.createElement('button');
+    bH.className = 'convert-button';
+    bH.type = 'button';
+    bH.textContent = '\u2190HEX'; // ←HEX
+    toH.appendChild(bH);
+  }
+})(globalThis);
+</script>
+</body>
+</html>
