@@ -1,0 +1,19 @@
+
+Confirm the following:
+
+1. #rgbcol edits → wait until text content is valid (6 hex digits) → update #strips left patch using valid value
+
+2. click #rgbtolch → if #rgbcol is valid, compute full-precision OKLCH from #rgbcol → update SoT_LCH → update #oklch (formatted)
+
+3. #oklch update or edits → wait until text can be parsed validly as “L C H”. set SoT_LCH to parsed value → update #lrgb (hex) → update #strips right patch with #lrgb, and #deltaE (ΔE).
+
+4. click #lchtorgb -> if #lrgb is valid, copy #lrgb to #rgbcol
+
+5. click #lrgbtolch -> if #lrgb is valid (6 hex digits), compute full-precision OKLCH from #lrgb → update SoT_LCH → update #oklch (formatted)
+
+6. at startup, perform step 2 for all #rgbcol.
+
+ΔE radio:
+   Col 1 vs Col 3 → Oklab(#rgbcol) vs Oklab(SoT_LCH).
+   Col 1 vs Col 4 → Oklab(#rgbcol) vs Oklab(#lrgb) ⇒ ΔE = 0.0000 when hexes match.
+
