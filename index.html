@@ -16,7 +16,7 @@
     --ph: rgba(0,0,0,.45);     /* unified placeholder color */
     --error: #b00020;          /* unified error color */
     --error-bg: #fff8c4;       /* unified error background (pale yellow) */
-    --cols: 7ch 5ch 160px 5ch 24ch 5ch 8ch 7ch; /* unified widths for 7 columns (added button cols) */
+    --cols: 7ch 5ch 160px 5ch 24ch 5ch 8ch 7ch 40ch; /* unified widths for 7 columns (added button cols) */
   }
   * { box-sizing: border-box; }
   body {
@@ -26,7 +26,7 @@
     color: #1b1f23;
   }
   header, main {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: var(--pad);
   }
@@ -186,6 +186,7 @@
       <div>←LCH</div>
       <div>#4 LCH to RGB</div>
       <div>#5 ΔE</div>
+      <div>Comments</div>
     </div>
 
     <div class="app">
@@ -197,6 +198,7 @@
       <div id="lrgbtolch" class="col-button"></div>
       <div id="lrgb" class="col"></div>
       <div id="deltae" class="col"></div>
+      <div id="comment" class="col"></div>
     </div>
   </div>
 
@@ -209,12 +211,56 @@
 (function(root){
   // ---- constants that affect look ----
   const ROWS = 32;
-  const defaultHexes=['12abef','ff0000','00ff00','0000ff','777777','abcdef','c0ffee','654321','f0f0f0','000000'];
+  const defaultValues = [
+  { "rgb": "#12abef",
+    "oklch_hex": ["0x3fe6771eba7c192f","0x3fc31a414d5eb105","0x406d91e406383b14"],
+    "oklch": "0.70204 0.14924 236.559",
+    "comment": "some random color"
+  },
+  { "rgb": "#ff0000",
+    "comment": "red"
+  },
+  { "rgb": "#00ff00",
+    "oklch_hex": ["0x3febb9df9070260c","0x3fd2de7312cdea2f","0x4061cfd9d0f07296"],
+    "oklch": "0.86644 0.29483 142.495",
+    "comment": "green"
+  },
+  { "rgb": "#0000ff",
+    "comment": "blue"
+  },
+  { "rgb": "#777777",
+    "oklch_hex": ["0x3fe23765c7ad6c6c","0x3e56c88c2a7d00ed","0x405678093a730d69"],
+    "oklch": "0.56926 0.00000 89.876",
+    "comment": "mid"
+  },
+  { "rgb": "#abcdef",
+    "oklch_hex": ["0x3feab825a3323e4b","0x3faecc6e00c85a18","0x406f119cb6020b21"],
+    "oklch": "0.83498 0.06015 248.550"
+  },
+  { "rgb": "#c0ffee",
+    "comment": "c0ffee with too much milk!"
+  },
+  { "rgb": "#654321",
+    "oklch_hex": ["0x3fda7f0f7cad5a95","0x3fb14f391e693b33","0x404ffddc23d45503"],
+    "oklch": "0.41401 0.06762 63.983"
+  },
+  { "rgb": "#f0f0f0"
+  },
+  { "rgb": "#000000",
+    "oklch_hex": ["0x0000000000000000","0x0000000000000000","0x0000000000000000"],
+    "oklch": "0.00000 0.00000 0.000"
+  },
+  { "comment": "nothing but comment!"
+  },
+  { "oklch_hex": ["0x3fe3333333333333","0x3fc5bcfd4bf0995b","0x406f400000000000"],
+    "oklch": "0.60000 0.16983 250.000"
+  }
+];
   // ---- const that affect loading/saving files
-  const KEYS = Object.freeze({ RGB: 'rgb', LCH_HEX: 'oklch_hex', OKLCH: 'oklch' });
+  const KEYS = Object.freeze({ RGB: 'rgb', LCH_HEX: 'oklch_hex', OKLCH: 'oklch', COMMENT: 'comment' });
 
   root.ROWS = ROWS;
-  root.defaultHexes = defaultHexes;
+  root.defaultValues = defaultValues;
   root.KEYS = KEYS;
 })(globalThis);
 </script>
@@ -227,7 +273,8 @@
         strips=document.getElementById('strips'),
         oklchCol=document.getElementById('oklch'),
         lrgb=document.getElementById('lrgb'),
-        deltaECol=document.getElementById('deltae');
+        deltaECol=document.getElementById('deltae'),
+        commentCol=document.getElementById('comment');
   const clamp01=x=>Math.min(1,Math.max(0,x));
   const srgbToLin=u=>(u<=0.04045?u/12.92:Math.pow((u+0.055)/1.055,2.4));
   const linToSrgb=u=>(u<=0.0031308?12.92*u:1.055*Math.pow(u,1/2.4)-0.055);
@@ -297,8 +344,8 @@
     renderRow(i);
   }
 
-  const HEX_INIT = Array.from({length: ROWS}, (_,i)=> i < defaultHexes.length ? defaultHexes[i] : '');
-  for(let i=0;i<ROWS;i++){ if(HEX_INIT[i]) SoT_LCH[i] = srgbToOklch(hexToRgb(HEX_INIT[i])); }
+  // No default seeding; HEX_INIT is empty so left chips start transparent
+  const HEX_INIT = Array.from({length: ROWS}, ()=> '');
   // --- Input filters ---
   const isHexChar = ch => /[0-9a-fA-F]/.test(ch);
   const filterHex = s => (s||'').replace(/[^0-9a-fA-F]/g,'').slice(0,6).toLowerCase();
@@ -336,13 +383,14 @@
   while(oklchCol.children.length  < ROWS) oklchCol.appendChild(document.createElement('input'));
   while(lrgb.children.length   < ROWS) lrgb.appendChild(document.createElement('div'));
   while(deltaECol.children.length < ROWS) deltaECol.appendChild(document.createElement('div'));
-  
-  // Initialize OKLCH inputs once from seeded SoT_LCH (no auto-sync from HEX afterward)
+  while(commentCol.children.length < ROWS) commentCol.appendChild(document.createElement('input'));
+
+  // Initialize OKLCH inputs once (empty)
   for(let i=0;i<ROWS;i++){
     const inp = oklchCol.children[i];
     if (inp && inp.tagName === 'INPUT') {
       inp.className = 'rowinput';
-      inp.value = SoT_LCH[i] ? fmtLCH(SoT_LCH[i]) : '';
+      inp.value = '';
     }
   }
 
@@ -358,6 +406,14 @@
       e.preventDefault();
     }
   });
+  
+  // Comment column
+  for (let i = 0; i < ROWS; i++) {
+    const inp = commentCol.children[i];
+    if (inp && inp.tagName === 'INPUT') {
+      inp.className = 'rowinput';
+    }
+  }
 
   function renderRow(i){
   const rgbNode=(hexInputs[i].value||'').trim();
@@ -373,7 +429,6 @@
   const leftHex = (/^[0-9a-fA-F]{6}$/.test(rgbNode)) ? ('#'+rgbNode) : (HEX_INIT[i] ? ('#'+HEX_INIT[i]) : 'transparent');
 
   if(SoT_LCH[i]){
-    
       const s4 = oklchToSrgb(SoT_LCH[i]);
       const rightHex = rgbToHex(...s4);
       lrgbNode.textContent = rightHex.replace(/^#/,''); 
@@ -525,9 +580,8 @@
   }
   document.querySelectorAll('input[name=\"deSrc\"]').forEach(r => r.addEventListener('change', recomputeAllDeltaE));
   render();
-  // Step 6: at startup, perform step 2 for all rows
-  for(let i=0;i<ROWS;i++){ handleToLCH(i); }
-
+  // No startup conversion; we auto-load defaults below via the #load logic.
+  
   // --- Button delegations ---
   document.getElementById('rgbtolch').addEventListener('click', (e)=>{
     if(!(e.target instanceof HTMLButtonElement)) return;
@@ -545,38 +599,44 @@
     if(i>=0) handleLchHex2Oklch(i);
   });
 
-  // --- Clear button: confirm then wipe all rows and state (minimal) ---
+  // --- Clear logic, reused by #clear and #load ---
+  function doClearAll(silent=false){
+    if(!silent && !confirm('Clear all rows to blank?')) return false;
+    for(let i=0;i<ROWS;i++){
+      SoT_LCH[i] = null;
+      HEX_INIT[i] = '';  // also clear seed so renderRow doesn't repopulate left stripe
+      // col #1 inputs
+      const inp = rgbCol.children[i];
+      if(inp && inp.tagName === 'INPUT') inp.value = '';
+      // col #3 OKLCH inputs
+      const ok = oklchCol.children[i];
+      if(ok && ok.tagName === 'INPUT'){ ok.value = ''; ok.classList.remove('err'); }
+      // col #4 computed hex text
+      const r4 = lrgb.children[i];
+      if(r4) r4.textContent = '';
+      // col #9 comments
+      const cmt = commentCol.children[i];
+      if(cmt && cmt.tagName === 'INPUT') cmt.value = '';
+      // col #2 chips: reset to left-only (seed or transparent)
+      if(strips.children[i]){
+        strips.children[i].style.background = `linear-gradient(to right, transparent 0 50%, transparent 50% 100%)`;
+      }
+      // ΔE
+      const de = deltaECol.children[i];
+      if(de) de.textContent = '';
+    }
+    // info box
+    const inf = document.getElementById('oklch-info');
+    if(inf){ inf.textContent = 'Cleared all rows.'; inf.classList.remove('err'); }
+    render(); // refresh visuals
+    return true;
+  }
+
+  // --- Clear button delegates to doClearAll() with confirm ---
   (function(){
     const clearBtn = document.getElementById('clear');
     if(!clearBtn) return;
-    clearBtn.addEventListener('click', ()=>{
-      if(!confirm('Clear all rows to blank?')) return;
-      // clear SoT and all columns
-      for(let i=0;i<ROWS;i++){
-        SoT_LCH[i] = null;
-        HEX_INIT[i] = '';  // also clear seed so renderRow doesn't repopulate left stripe
-        // col #1 inputs
-        const inp = rgbCol.children[i];
-        if(inp && inp.tagName === 'INPUT') inp.value = '';
-        // col #3 OKLCH inputs
-        const ok = oklchCol.children[i];
-        if(ok && ok.tagName === 'INPUT'){ ok.value = ''; ok.classList.remove('err'); }
-        // col #4 computed hex text
-        const r4 = lrgb.children[i];
-        if(r4) r4.textContent = '';
-        // col #2 chips: reset to left-only (seed or transparent)
-        if(strips.children[i]){
-          strips.children[i].style.background = `linear-gradient(to right, transparent 0 50%, transparent 50% 100%)`;
-        }
-        // ΔE
-        const de = deltaECol.children[i];
-        if(de) de.textContent = '';
-      }
-      // info box
-      const inf = document.getElementById('oklch-info');
-      if(inf){ inf.textContent = 'Cleared all rows.'; inf.classList.remove('err'); }
-      render(); // refresh visuals
-    });
+    clearBtn.addEventListener('click', ()=> doClearAll(false));
   })();
 
   // --- Load button: import JSON file and populate rows (DRY) ---
@@ -639,6 +699,47 @@
       renderRow(row);
     }
 
+    // DRY: array-population helper used by both file load and startup
+    function populateFromArray(data){
+      const inf = document.getElementById('oklch-info');
+      if(!Array.isArray(data)){
+        if(inf){ inf.textContent = 'Load failed: JSON must be an array'; inf.classList.add('err'); }
+        return;
+      }
+      doClearAll(true);
+      let row = 0, filled = 0;
+      for(const item of data){
+        if(row >= ROWS) break;
+        if(!item || typeof item !== 'object') continue;
+        let someValidData = false;
+        if(Object.prototype.hasOwnProperty.call(item, KEYS.RGB)){
+          const h6 = toHex6NoHash(item.rgb);
+          if(h6){ setRowRgb(row, h6); someValidData = true; }
+        }
+        let hadSoT = false;
+        if(Object.prototype.hasOwnProperty.call(item, KEYS.LCH_HEX)){
+          const lch = parseSoTLCH(item[KEYS.LCH_HEX]);
+          if(lch){ setRowFromSoTLCH(row, lch); someValidData = true; hadSoT = true; }
+        }
+        if(!hadSoT && Object.prototype.hasOwnProperty.call(item, KEYS.OKLCH)){
+          const parsed = parseOKLCHString(item[KEYS.OKLCH]);
+          if(parsed){ setRowFromSoTLCH(row, parsed); someValidData = true; }
+        }
+        if (Object.prototype.hasOwnProperty.call(item, KEYS.COMMENT)) {
+          const cv = (typeof item[KEYS.COMMENT] === 'string') ? item[KEYS.COMMENT].trim() : '';
+          if (cv) {
+            const cInput = commentCol.children[row];
+            if (cInput && cInput.tagName === 'INPUT') { cInput.value = cv; someValidData = true; }
+          }
+        }
+        if(someValidData){ row++; filled++; }
+      }
+      if(inf){
+        if(filled>0){ inf.textContent = 'Loaded '+filled+' row(s) from JSON.'; inf.classList.remove('err'); }
+        else{ inf.textContent = 'No valid rows found in JSON.'; inf.classList.add('err'); }
+      }
+    }
+
     loadBtn.addEventListener('click', ()=>{
       const fi = document.createElement('input');
       fi.type = 'file';
@@ -648,74 +749,25 @@
         if(!file){ return; }
         const reader = new FileReader();
         reader.onload = ()=>{
-          const inf = document.getElementById('oklch-info');
           let data;
           try{
             data = JSON.parse(String(reader.result || ''));
           }catch{
+            const inf = document.getElementById('oklch-info');
             if(inf){ inf.textContent = 'Load failed: invalid JSON'; inf.classList.add('err'); }
             return;
           }
-          if(!Array.isArray(data)){
-            if(inf){ inf.textContent = 'Load failed: JSON must be an array'; inf.classList.add('err'); }
-            return;
-          }
-          // populate rows
-          let row = 0;
-          let filled = 0;
-          for(const item of data){
-            if(row >= ROWS) break;
-            if(!item || typeof item !== 'object') continue;
-            let someValidData = false;
-
-            // rgb
-            if(Object.prototype.hasOwnProperty.call(item, KEYS.RGB)){
-              const h6 = toHex6NoHash(item.rgb);
-              if(h6){
-                setRowRgb(row, h6);
-                someValidData = true;
-              }
-            }
-
-            // SoT_LCH (preferred over oklch when present & valid)
-            let hadSoT = false;
-            if(Object.prototype.hasOwnProperty.call(item, KEYS.LCH_HEX)){
-              const lch = parseSoTLCH(item[KEYS.LCH_HEX]);
-              if(lch){
-                setRowFromSoTLCH(row, lch);
-                someValidData = true;
-                hadSoT = true;
-              }
-            }
-
-            // oklch string (used only if SoT_LCH not valid)
-            if(!hadSoT && Object.prototype.hasOwnProperty.call(item, KEYS.OKLCH)){
-              const parsed = parseOKLCHString(item[KEYS.OKLCH]);
-              if(parsed){
-                setRowFromSoTLCH(row, parsed);
-                someValidData = true;
-              }
-            }
-
-            if(someValidData){
-              row++;
-              filled++;
-            }
-          }
-          if(inf){
-            if(filled>0){
-              inf.textContent = 'Loaded '+filled+' row(s) from JSON.';
-              inf.classList.remove('err');
-            }else{
-              inf.textContent = 'No valid rows found in JSON.';
-              inf.classList.add('err');
-            }
-          }
+          populateFromArray(data);
         };
         reader.readAsText(file);
       }, {once:true});
       fi.click();
     });
+
+    // Auto-load defaults on startup
+    if (Array.isArray(root.defaultValues)) {
+      populateFromArray(root.defaultValues);
+    }
   })();
 
   // --- Copy/Save buttons: dump rows to JSON (DRY) with IEEE-754 lossless bytes for SoT_LCH ---
@@ -765,6 +817,15 @@
           const parsed = parseOKLCHString(raw);
           if(parsed){
             rowObj[KEYS.OKLCH] = raw;
+          }
+        }
+
+        // comment from commentCol input (include only when non-empty)
+        const cIn = commentCol.children[i];
+        if (cIn && cIn.tagName === 'INPUT') {
+          const cv = (cIn.value || '').trim();
+          if (cv) {
+            rowObj[KEYS.COMMENT] = cv;
           }
         }
 
