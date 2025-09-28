@@ -113,6 +113,7 @@
     text-overflow: ellipsis;
   }
   .rowinput {
+  	color: inherit;
     border: none;
     outline: none;
     width: 100%;
@@ -122,8 +123,6 @@
   }
   .rowinput::placeholder { color: var(--ph); opacity: 1; }
   .rowinput::-webkit-input-placeholder { color: var(--ph); opacity: 1; }
-  .phstyle { color: var(--ph); }
-
   .note { font-size: 12px; opacity: .8; margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;}
 
   button {
@@ -138,10 +137,11 @@
   .oklch-info {
     margin-top:6px;
     font:12px/1.3 var(--font);
-    color:var(--error);
+    color:var(--color-fg);
     min-height:1.3em; /* reserve one line even when empty */
   }
   .oklch-info.err {
+  	color: var(--error);
     background:var(--error-bg);
     font-weight:700;
   }
@@ -149,6 +149,7 @@
 
   /* Convert buttons (→LCH / ←HEX) */
   .convert-button {
+  	color: inherit;
     font-family: var(--font);
     font-size: var(--fs);
     width: 5ch;                /* fixed as requested */
@@ -198,7 +199,7 @@
 /* Dark theme */
 :root[data-theme="dark"] {
   --color-bg: #0f1115;
-  --color-fg: #e6e9ef;
+  --color-fg: #cecece;
   --color-surface: #161a20;
   --color-surface-hover: #1c222b;
   --color-border: rgba(255,255,255,.16);
@@ -207,7 +208,7 @@
   --color-error: #ff4d57;
   --color-error-bg: #2a1900;
   --color-black: #000;
-  --color-white: #fff;
+  --color-white: #ffffff;
   --color-outline: color-mix(in oklab, var(--color-white), var(--color-black) 50%);
 
   /* form-control tokens for dark theme */
@@ -220,37 +221,6 @@
 /* Prefer UA theming per explicit theme */
 html[data-theme="light"] { color-scheme: light; }
 html[data-theme="dark"]  { color-scheme: dark;  }
-
-/* ===== Custom Radio (consistent across themes) ===== */
-input[type="radio"].ui-radio {
-  -webkit-appearance: none;
-  appearance: none;
-  inline-size: 16px;
-  block-size: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--color-control-border);
-  background: var(--color-control-bg);
-  display: inline-grid;
-  place-content: center;
-  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
-input[type="radio"].ui-radio::before {
-  content: "";
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: 50%;
-  transform: scale(0);
-  transition: transform .15s ease;
-  background: var(--color-control-bg-checked);
-}
-input[type="radio"].ui-radio:checked::before {
-  transform: scale(1);
-}
-input[type="radio"].ui-radio:focus-visible {
-  outline: 2px solid var(--color-outline);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-outline), transparent 70%);
-}
 
 </style>
 </head>
